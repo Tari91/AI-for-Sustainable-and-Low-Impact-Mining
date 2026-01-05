@@ -1,0 +1,93 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor, IsolationForest
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, classification_report
+
+# ==========================================
+# 1. SYNTHETIC DATA GENERATION (Mining Site)
+# ==========================================
+def generate_mining_data(n_points=1000):
+    np.random.seed(42)
+    # Spatial coordinates (Lat, Lon, Depth)
+    lat = np.random.uniform(0, 100, n_points)
+    lon = np.random.uniform(0, 100, n_points)
+    depth = np.random.uniform(10, 500, n_points)
+    
+    # Feature 1: Mineral Concentration (%) - The "Sustainable" Target
+    # High concentrations are clustered (simulating a vein)
+    concentration = 10 * np.exp(-((lat-50)**2 + (lon-50)**2) / 500) + np.random.normal(0, 0.5, n_points)
+    concentration = np.clip(concentration, 0, 100)
+    
+    # Feature 2: Sensor Data for Tailings Dam Stability (Vibration, Water Pressure)
+    vibration = np.random.normal(2.5, 0.5, n_points)
+    water_pressure = np.random.normal(15, 2, n_points)
+    
+    # Inject "Anomalies" (Potential low-impact risks)
+    # 3% of data points represent a potential stability failure
+    n_anomalies = int(n_points * 0.03)
+    vibration[:n_anomalies] += 5.0 
+    water_pressure[:n_anomalies] += 10.0
+    
+    df = pd.DataFrame({
+        'lat': lat, 'lon': lon, 'depth': depth,
+        'concentration': concentration,
+        'vibration': vibration,
+        'water_pressure': water_pressure
+    })
+    return df, n_anomalies
+
+data, n_anom = generate_mining_data()
+
+# ==========================================
+# 2. MODULE A: ORE GRADE OPTIMIZATION
+# Goal: Minimize "Overburden" (moving waste rock)
+# ==========================================
+X_ore = data[['lat', 'lon', 'depth']]
+y_ore = data['concentration']
+
+X_train, X_test, y_train, y_test = train_test_split(X_ore, y_ore, test_size=0.2)
+
+ore_model = RandomForestRegressor(n_estimators=100)
+ore_model.fit(X_train, y_train)
+
+# Evaluate
+preds = ore_model.predict(X_test)
+print(f"Ore Prediction Error (MSE): {mean_squared_error(y_test, preds):.4f}")
+
+# ==========================================
+# 3. MODULE B: ENVIRONMENTAL RISK DETECTION
+# Goal: Detect Tailings Dam instability before failure
+# ==========================================
+X_env = data[['vibration', 'water_pressure']]
+
+# Isolation Forest is great for detecting rare environmental hazards
+env_monitor = IsolationForest(contamination=0.03, random_state=42)
+data['risk_anomaly'] = env_monitor.fit_predict(X_env)
+
+# Convert -1 (anomaly) to 1 for easier reading
+data['risk_detected'] = data['risk_anomaly'].apply(lambda x: 1 if x == -1 else 0)
+
+# ==========================================
+# 4. VISUALIZATION
+# ==========================================
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+# Map A: Resource Mapping
+sc1 = ax1.scatter(data['lat'], data['lon'], c=data['concentration'], cmap='viridis', s=10)
+ax1.set_title("Sustainable Extraction: High-Grade Targeting")
+plt.colorbar(sc1, ax=ax1, label="Mineral %")
+
+# Map B: Risk Monitoring
+risks = data[data['risk_detected'] == 1]
+ax2.scatter(data['lat'], data['lon'], c='lightgrey', s=5, alpha=0.5)
+ax2.scatter(risks['lat'], risks['lon'], c='red', s=30, label="Stability Hazard")
+ax2.set_title("Environmental Monitor: Hazard Alerts")
+ax2.legend()
+
+plt.show()
+
+print("\n--- Low-Impact Mining Report ---")
+print(f"Hazards detected by AI: {data['risk_detected'].sum()}")
+print("AI-guided extraction plan reduces required excavation by targetting only high-grade zones.")
